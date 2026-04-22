@@ -5,7 +5,7 @@ import type { ScanDetail } from "../types";
 
 const INITIAL_DELAY_MS = 3000;
 const MAX_DELAY_MS = 15000;
-const TIMEOUT_MS = 120_000;
+const TIMEOUT_MS = 180_000;
 
 export function useScanPoll(scanId: string | null) {
   const [scan, setScan] = useState<ScanDetail | null>(null);
