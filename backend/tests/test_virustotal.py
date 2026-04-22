@@ -2,36 +2,35 @@ from io import BytesIO
 
 import httpx
 import pytest
+import respx
 
 from app.services.virustotal import VirusTotalClient, VirusTotalError
 
 BASE_URL = "https://vt.test/api/v3"
 
 
-def _client(handler):
-    transport = httpx.MockTransport(handler)
-    return VirusTotalClient(api_key="test-key", base_url=BASE_URL, transport=transport)
+@pytest.fixture
+def client():
+    return VirusTotalClient(api_key="test-key", base_url=BASE_URL)
 
 
-async def test_upload_file_returns_analysis_id():
-    def handler(request: httpx.Request) -> httpx.Response:
-        assert request.method == "POST"
-        assert request.url.path == "/api/v3/files"
-        assert request.headers["x-apikey"] == "test-key"
-        return httpx.Response(200, json={"data": {"id": "abc123", "type": "analysis"}})
+@respx.mock
+async def test_upload_file_returns_analysis_id(client: VirusTotalClient):
+    route = respx.post(f"{BASE_URL}/files").mock(
+        return_value=httpx.Response(200, json={"data": {"id": "abc123", "type": "analysis"}})
+    )
 
-    c = _client(handler)
-    try:
-        analysis_id = await c.upload_file(filename="x.js", buffer=BytesIO(b"hello"))
-        assert analysis_id == "abc123"
-    finally:
-        await c.aclose()
+    analysis_id = await client.upload_file(filename="x.js", buffer=BytesIO(b"hello"))
+
+    assert analysis_id == "abc123"
+    assert route.called
+    assert route.calls.last.request.headers["x-apikey"] == "test-key"
 
 
-async def test_get_analysis_status_returns_completed():
-    def handler(request: httpx.Request) -> httpx.Response:
-        assert request.url.path == "/api/v3/analyses/abc123"
-        return httpx.Response(
+@respx.mock
+async def test_get_analysis_status_returns_completed(client: VirusTotalClient):
+    respx.get(f"{BASE_URL}/analyses/abc123").mock(
+        return_value=httpx.Response(
             200,
             json={
                 "data": {
@@ -48,21 +47,19 @@ async def test_get_analysis_status_returns_completed():
                 }
             },
         )
+    )
 
-    c = _client(handler)
-    try:
-        s = await c.get_analysis_status("abc123")
-        assert s.status == "completed"
-        assert s.sha256 == "deadbeef"
-        assert s.stats["malicious"] == 5
-    finally:
-        await c.aclose()
+    status = await client.get_analysis_status("abc123")
+
+    assert status.status == "completed"
+    assert status.sha256 == "deadbeef"
+    assert status.stats["malicious"] == 5
 
 
-async def test_get_file_report_returns_full_report():
-    def handler(request: httpx.Request) -> httpx.Response:
-        assert request.url.path == "/api/v3/files/deadbeef"
-        return httpx.Response(
+@respx.mock
+async def test_get_file_report_returns_full_report(client: VirusTotalClient):
+    respx.get(f"{BASE_URL}/files/deadbeef").mock(
+        return_value=httpx.Response(
             200,
             json={
                 "data": {
@@ -81,40 +78,35 @@ async def test_get_file_report_returns_full_report():
                 }
             },
         )
+    )
 
-    c = _client(handler)
-    try:
-        report = await c.get_file_report("deadbeef")
-        assert report.stats["malicious"] == 5
-        assert report.vendor_results["EngineA"]["category"] == "malicious"
-    finally:
-        await c.aclose()
+    report = await client.get_file_report("deadbeef")
+
+    assert report.stats["malicious"] == 5
+    assert report.vendor_results["EngineA"]["category"] == "malicious"
 
 
-async def test_upload_file_raises_on_api_error():
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(429, json={"error": {"code": "QuotaExceeded"}})
+@respx.mock
+async def test_upload_file_raises_on_api_error(client: VirusTotalClient):
+    respx.post(f"{BASE_URL}/files").mock(
+        return_value=httpx.Response(429, json={"error": {"code": "QuotaExceeded"}})
+    )
 
-    c = _client(handler)
-    try:
-        with pytest.raises(VirusTotalError, match="429"):
-            await c.upload_file(filename="x.js", buffer=BytesIO(b"hi"))
-    finally:
-        await c.aclose()
+    with pytest.raises(VirusTotalError, match="429"):
+        await client.upload_file(filename="x.js", buffer=BytesIO(b"hi"))
 
 
-async def test_get_analysis_status_pending():
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(
+@respx.mock
+async def test_get_analysis_status_pending(client: VirusTotalClient):
+    respx.get(f"{BASE_URL}/analyses/p1").mock(
+        return_value=httpx.Response(
             200,
             json={"data": {"attributes": {"status": "queued"}, "meta": {}}},
         )
+    )
 
-    c = _client(handler)
-    try:
-        s = await c.get_analysis_status("p1")
-        assert s.status == "queued"
-        assert s.sha256 is None
-        assert s.stats is None
-    finally:
-        await c.aclose()
+    status = await client.get_analysis_status("p1")
+
+    assert status.status == "queued"
+    assert status.sha256 is None
+    assert status.stats is None
