@@ -55,7 +55,12 @@ async def create_scan(
 
 
 async def advance_scan(db: Session, *, vt: VirusTotalClient, scan: Scan) -> Scan:
-    """Poll VT once and update the scan row. Only acts on pending rows."""
+    """Poll VT once and update the scan row. Only acts on pending rows.
+
+    Uses the locally-computed sha256 to fetch the file report. The local
+    hash is authoritative because it is deterministic from the bytes the
+    user uploaded, which is also what VT received.
+    """
     if scan.status != "pending" or not scan.vt_analysis_id:
         return scan
 
@@ -63,10 +68,8 @@ async def advance_scan(db: Session, *, vt: VirusTotalClient, scan: Scan) -> Scan
     if analysis.status != "completed":
         return scan
 
-    sha = analysis.sha256 or scan.sha256
-    report = await vt.get_file_report(sha)
+    report = await vt.get_file_report(scan.sha256)
     scan.status = "complete"
-    scan.sha256 = sha
     scan.stats = report.stats
     scan.vendor_results = report.vendor_results
     scan.verdict = compute_verdict(report.stats)

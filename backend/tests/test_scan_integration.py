@@ -27,11 +27,18 @@ from app.main import app
 from app.services.gemini import GeminiClient
 from app.services.virustotal import AnalysisStatus, FileReport, VirusTotalClient
 
+import os
+
+_PG_HOST = os.getenv("TEST_PG_HOST", "localhost")
+_PG_PORT = os.getenv("TEST_PG_PORT", "5432")
+_PG_USER = os.getenv("TEST_PG_USER", "cloudsine")
+_PG_PASSWORD = os.getenv("TEST_PG_PASSWORD", "change_me_in_prod")
+
 TEST_DB_URL = (
-    "postgresql+psycopg://cloudsine:change_me_in_prod@localhost:5432/cloudsine_test"
+    f"postgresql+psycopg://{_PG_USER}:{_PG_PASSWORD}@{_PG_HOST}:{_PG_PORT}/cloudsine_test"
 )
 ADMIN_DB_URL = (
-    "postgresql+psycopg://cloudsine:change_me_in_prod@localhost:5432/postgres"
+    f"postgresql+psycopg://{_PG_USER}:{_PG_PASSWORD}@{_PG_HOST}:{_PG_PORT}/postgres"
 )
 
 
