@@ -1,0 +1,51 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      retries: 10
+
+  backend:
+    image: ghcr.io/${GHCR_OWNER:-jovitaeliana}/cloudsine-backend:${IMAGE_TAG:-latest}
+    build:
+      context: ./backend
+      target: prod
+    restart: always
+    env_file: .env
+    depends_on:
+      db:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+
+  frontend:
+    image: ghcr.io/${GHCR_OWNER:-jovitaeliana}/cloudsine-frontend:${IMAGE_TAG:-latest}
+    build:
+      context: ./frontend
+      target: prod
+    restart: always
+    depends_on:
+      - backend
+    ports:
+      - "80:80"
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+volumes:
+  pgdata:
