@@ -24,6 +24,11 @@ services:
       target: prod
     restart: always
     env_file: .env
+    environment:
+      # Always point at the 'db' service inside the compose network,
+      # overriding any localhost DATABASE_URL that exists in .env for
+      # local-on-host development.
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
     depends_on:
       db:
         condition: service_healthy
