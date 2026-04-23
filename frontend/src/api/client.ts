@@ -1,5 +1,6 @@
 import type {
-  ExplanationResponse,
+  ChatHistoryResponse,
+  ChatResponse,
   ScanCreateResponse,
   ScanDetail,
   ScanListResponse,
@@ -30,7 +31,19 @@ export async function fetchRecentScans(limit = 20): Promise<ScanListResponse> {
   return handle<ScanListResponse>(r);
 }
 
-export async function fetchExplanation(id: string): Promise<ExplanationResponse> {
-  const r = await fetch(`/api/explain/${id}`, { method: "POST" });
-  return handle<ExplanationResponse>(r);
+export async function fetchChatHistory(scanId: string): Promise<ChatHistoryResponse> {
+  const r = await fetch(`/api/chat/${scanId}`);
+  return handle<ChatHistoryResponse>(r);
+}
+
+export async function sendChatMessage(
+  scanId: string,
+  message: string,
+): Promise<ChatResponse> {
+  const r = await fetch(`/api/chat/${scanId}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message }),
+  });
+  return handle<ChatResponse>(r);
 }

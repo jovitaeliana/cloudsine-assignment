@@ -36,6 +36,21 @@ export interface ScanListResponse {
   items: ScanSummary[];
 }
 
-export interface ExplanationResponse {
-  explanation: string;
+export type MessageRole = "user" | "assistant";
+
+export interface ChatMessage {
+  id: string;
+  scan_id: string;
+  role: MessageRole;
+  content: string;
+  created_at: string;
+}
+
+export interface ChatHistoryResponse {
+  messages: ChatMessage[];
+}
+
+export interface ChatResponse {
+  user_message: ChatMessage;
+  assistant_message: ChatMessage;
 }
