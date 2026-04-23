@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { fetchChatHistory, sendChatMessage } from "../api/client";
 import type { ChatMessage, Verdict } from "../types";
+import { MessageBubble } from "./MessageBubble";
 
 const CHIPS_BY_VERDICT: Record<string, string[]> = {
   malicious: [
@@ -143,20 +144,7 @@ export function ChatThread({ scanId, verdict }: Props) {
       {messages.length > 0 && (
         <div className="max-h-96 overflow-y-auto space-y-3 mb-3 pr-2">
           {messages.map((m) => (
-            <div
-              key={m.id}
-              className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}
-            >
-              <div
-                className={`max-w-[80%] px-3 py-2 rounded-lg whitespace-pre-line text-sm ${
-                  m.role === "user"
-                    ? "bg-indigo-600 text-white"
-                    : "bg-white text-indigo-950 border border-indigo-200"
-                }`}
-              >
-                {m.content}
-              </div>
-            </div>
+            <MessageBubble key={m.id} message={m} />
           ))}
           {sending && (
             <div className="flex justify-start">
