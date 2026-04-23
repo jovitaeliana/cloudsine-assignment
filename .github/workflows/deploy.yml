@@ -1,0 +1,127 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: deploy-main
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  BACKEND_IMAGE: ${{ github.repository_owner }}/cloudsine-backend
+  FRONTEND_IMAGE: ${{ github.repository_owner }}/cloudsine-frontend
+
+jobs:
+  build-and-push:
+    name: Build + push images to GHCR
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build + push backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          target: prod
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.BACKEND_IMAGE }}:latest
+            ${{ env.REGISTRY }}/${{ env.BACKEND_IMAGE }}:${{ github.sha }}
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,scope=backend,mode=max
+
+      - name: Build + push frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          target: prod
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.FRONTEND_IMAGE }}:latest
+            ${{ env.REGISTRY }}/${{ env.FRONTEND_IMAGE }}:${{ github.sha }}
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,scope=frontend,mode=max
+
+  deploy:
+    name: Deploy to EC2
+    needs: build-and-push
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: 22
+          envs: VIRUSTOTAL_API_KEY,GEMINI_API_KEY,POSTGRES_USER,POSTGRES_PASSWORD,POSTGRES_DB,CORS_ALLOWED_ORIGINS,ENVIRONMENT
+          script: |
+            set -euo pipefail
+            cd /opt/cloudsine-assignment
+
+            # Pull latest code so docker-compose.yml matches the image tags
+            git fetch origin main
+            git reset --hard origin/main
+
+            # Write .env from GitHub Secrets (never stored in the repo)
+            cat > .env <<EOF
+            VIRUSTOTAL_API_KEY=${VIRUSTOTAL_API_KEY}
+            GEMINI_API_KEY=${GEMINI_API_KEY}
+            POSTGRES_USER=${POSTGRES_USER}
+            POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+            POSTGRES_DB=${POSTGRES_DB}
+            DATABASE_URL=postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+            ENVIRONMENT=${ENVIRONMENT:-production}
+            CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS}
+            EOF
+            chmod 600 .env
+
+            # Authenticate to GHCR so the pull works for private packages.
+            # Safe to skip if packages are public; left in for either case.
+            echo "${{ secrets.GHCR_PULL_TOKEN }}" | docker login ghcr.io \
+                -u ${{ github.actor }} --password-stdin || true
+
+            # Pull freshly pushed images and restart the stack
+            docker compose pull
+            docker compose up -d
+
+            # Wait up to 60s for health to come up
+            for i in $(seq 1 30); do
+              if curl -fsS http://localhost/api/healthz > /dev/null; then
+                echo "health check passed"
+                exit 0
+              fi
+              sleep 2
+            done
+
+            echo "health check failed after 60s"
+            docker compose logs backend --tail=50
+            exit 1
+        env:
+          VIRUSTOTAL_API_KEY: ${{ secrets.VIRUSTOTAL_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
+          CORS_ALLOWED_ORIGINS: ${{ secrets.CORS_ALLOWED_ORIGINS }}
+          ENVIRONMENT: ${{ secrets.ENVIRONMENT }}
