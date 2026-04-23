@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { uploadFile } from "./api/client";
-import { AIExplanation } from "./components/AIExplanation";
+import { ChatThread } from "./components/ChatThread";
 import { RecentScans } from "./components/RecentScans";
 import { UploadZone } from "./components/UploadZone";
 import { VendorTable } from "./components/VendorTable";
@@ -66,7 +66,7 @@ export default function App() {
                 <>
                   <VerdictCard scan={scan} />
                   <VendorTable scan={scan} />
-                  <AIExplanation scanId={scan.id} initial={scan.ai_explanation} />
+                  <ChatThread scanId={scan.id} verdict={scan.verdict} />
                 </>
               )}
             </div>
