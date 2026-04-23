@@ -13,6 +13,7 @@ Postgres service container is provisioned; locally you can run
 before invoking pytest.
 """
 import io
+import os
 from unittest.mock import MagicMock
 
 import pytest
@@ -26,8 +27,6 @@ from app.database import Base, get_db
 from app.main import app
 from app.services.gemini import GeminiClient
 from app.services.virustotal import AnalysisStatus, FileReport, VirusTotalClient
-
-import os
 
 _PG_HOST = os.getenv("TEST_PG_HOST", "localhost")
 _PG_PORT = os.getenv("TEST_PG_PORT", "5432")
@@ -272,6 +271,7 @@ def test_chat_post_404_for_missing_scan(client):
 
 def test_chat_preserves_user_message_on_gemini_server_error(client, db):
     from unittest.mock import MagicMock
+
     from google.genai.errors import ServerError
 
     from app import deps
