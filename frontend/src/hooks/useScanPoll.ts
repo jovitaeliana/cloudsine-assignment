@@ -3,8 +3,7 @@ import { useEffect, useState } from "react";
 import { fetchScan } from "../api/client";
 import type { ScanDetail } from "../types";
 
-const INITIAL_DELAY_MS = 3000;
-const MAX_DELAY_MS = 15000;
+const POLL_INTERVAL_MS = 3000;
 const TIMEOUT_MS = 180_000;
 
 export function useScanPoll(scanId: string | null) {
@@ -18,7 +17,6 @@ export function useScanPoll(scanId: string | null) {
       return;
     }
     let cancelled = false;
-    let delay = INITIAL_DELAY_MS;
     const start = Date.now();
 
     async function tick() {
@@ -32,8 +30,7 @@ export function useScanPoll(scanId: string | null) {
           setError("Scan timed out");
           return;
         }
-        delay = Math.min(delay * 1.3, MAX_DELAY_MS);
-        setTimeout(tick, delay);
+        setTimeout(tick, POLL_INTERVAL_MS);
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : "Poll failed");
       }

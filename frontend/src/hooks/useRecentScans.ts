@@ -3,6 +3,8 @@ import { useCallback, useEffect, useState } from "react";
 import { fetchRecentScans } from "../api/client";
 import type { ScanSummary } from "../types";
 
+const POLL_INTERVAL_MS = 5000;
+
 export function useRecentScans() {
   const [scans, setScans] = useState<ScanSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -19,6 +21,13 @@ export function useRecentScans() {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    const hasPending = scans.some((s) => s.status === "pending");
+    if (!hasPending) return;
+    const id = setInterval(refresh, POLL_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [scans, refresh]);
 
   return { scans, error, refresh };
 }
