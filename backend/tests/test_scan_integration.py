@@ -83,7 +83,7 @@ def db(engine):
         session.rollback()
         session.close()
         with engine.begin() as c:
-            c.execute(text("TRUNCATE TABLE scans RESTART IDENTITY"))
+            c.execute(text("TRUNCATE TABLE scans, scan_messages RESTART IDENTITY CASCADE"))
 
 
 @pytest.fixture
@@ -115,7 +115,7 @@ def fake_vt():
 @pytest.fixture
 def fake_gemini():
     g = MagicMock(spec=GeminiClient)
-    g.explain.return_value = "This file appears to be malicious. You should not open it."
+    g.chat.return_value = "This file appears to be malicious. You should not open it."
     return g
 
 
@@ -165,20 +165,6 @@ def test_second_upload_hits_cache(client):
     assert body["status"] == "complete"
 
 
-def test_explain_caches_result(client):
-    files = {"file": ("x.js", io.BytesIO(b"abc"), "application/javascript")}
-    sid = client.post("/api/scan", files=files).json()["scan_id"]
-    client.get(f"/api/scan/{sid}")
-
-    r1 = client.post(f"/api/explain/{sid}")
-    assert r1.status_code == 200
-    text1 = r1.json()["explanation"]
-    assert "malicious" in text1.lower() or "open it" in text1.lower()
-
-    r2 = client.post(f"/api/explain/{sid}")
-    assert r2.json()["explanation"] == text1
-
-
 def test_list_scans_returns_recent(client):
     for name in ["a.js", "b.js", "c.js"]:
         client.post("/api/scan", files={"file": (name, io.BytesIO(b"x"), "text/plain")})
@@ -190,25 +176,154 @@ def test_list_scans_returns_recent(client):
     assert items[0]["created_at"] >= items[-1]["created_at"]
 
 
-def test_explain_returns_404_for_missing_scan(client):
-    from uuid import uuid4
+def test_chat_post_persists_both_messages_and_returns_them(client, db):
+    from app.models import Scan
 
-    r = client.post(f"/api/explain/{uuid4()}")
+    scan = Scan(
+        sha256="a" * 64,
+        filename="evil.js",
+        size_bytes=100,
+        status="complete",
+        verdict="malicious",
+        stats={"malicious": 5, "suspicious": 0, "harmless": 50, "undetected": 10},
+        vendor_results={"EngineA": {"category": "malicious", "result": "Trojan.X"}},
+    )
+    db.add(scan)
+    db.commit()
+
+    r = client.post(f"/api/chat/{scan.id}", json={"message": "Explain this"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["user_message"]["content"] == "Explain this"
+    assert body["user_message"]["role"] == "user"
+    assert body["assistant_message"]["role"] == "assistant"
+    # Default fake_gemini returns the mocked chat text
+    assert body["assistant_message"]["content"]
+
+
+def test_chat_get_returns_history_in_order(client, db):
+    from app.models import Scan
+
+    scan = Scan(
+        sha256="b" * 64,
+        filename="chatty.js",
+        size_bytes=100,
+        status="complete",
+        verdict="clean",
+    )
+    db.add(scan)
+    db.commit()
+
+    client.post(f"/api/chat/{scan.id}", json={"message": "First question"})
+    client.post(f"/api/chat/{scan.id}", json={"message": "Second question"})
+
+    r = client.get(f"/api/chat/{scan.id}")
+    assert r.status_code == 200
+    msgs = r.json()["messages"]
+    # Two user + two assistant = 4 messages, in chronological order
+    assert len(msgs) == 4
+    assert msgs[0]["role"] == "user"
+    assert msgs[0]["content"] == "First question"
+    assert msgs[1]["role"] == "assistant"
+    assert msgs[2]["role"] == "user"
+    assert msgs[2]["content"] == "Second question"
+    assert msgs[3]["role"] == "assistant"
+
+
+def test_chat_returns_empty_history_for_scan_with_no_messages(client, db):
+    from app.models import Scan
+
+    scan = Scan(
+        sha256="c" * 64,
+        filename="quiet.js",
+        size_bytes=50,
+        status="complete",
+        verdict="clean",
+    )
+    db.add(scan)
+    db.commit()
+
+    r = client.get(f"/api/chat/{scan.id}")
+    assert r.status_code == 200
+    assert r.json() == {"messages": []}
+
+
+def test_chat_rejects_pending_scan(client, db):
+    from app.models import Scan
+
+    scan = Scan(
+        sha256="d" * 64,
+        filename="pending.js",
+        size_bytes=50,
+        status="pending",
+    )
+    db.add(scan)
+    db.commit()
+
+    r = client.post(f"/api/chat/{scan.id}", json={"message": "Explain"})
+    assert r.status_code == 409
+
+
+def test_chat_post_404_for_missing_scan(client):
+    from uuid import uuid4
+    r = client.post(f"/api/chat/{uuid4()}", json={"message": "Explain"})
     assert r.status_code == 404
 
 
-def test_explain_returns_409_when_scan_not_complete(client, db):
+def test_chat_preserves_user_message_on_gemini_server_error(client, db):
+    from unittest.mock import MagicMock
+    from google.genai.errors import ServerError
+
+    from app import deps
     from app.models import Scan
 
-    row = Scan(
-        sha256="a" * 64,
-        filename="p.js",
-        size_bytes=10,
-        status="pending",
-        vt_analysis_id="wait",
+    scan = Scan(
+        sha256="e" * 64,
+        filename="unlucky.js",
+        size_bytes=50,
+        status="complete",
+        verdict="malicious",
     )
-    db.add(row)
+    db.add(scan)
     db.commit()
 
-    r = client.post(f"/api/explain/{row.id}")
-    assert r.status_code == 409
+    busted_gemini = MagicMock()
+    fake_resp = MagicMock()
+    fake_resp.status_code = 503
+    fake_resp.json.return_value = {"error": {"code": 503, "message": "overloaded"}}
+    busted_gemini.chat.side_effect = ServerError(503, fake_resp)
+
+    app.dependency_overrides[deps.get_gemini_client] = lambda: busted_gemini
+    try:
+        r = client.post(f"/api/chat/{scan.id}", json={"message": "Explain"})
+        assert r.status_code == 503
+        # User message should still be persisted
+        r2 = client.get(f"/api/chat/{scan.id}")
+        msgs = r2.json()["messages"]
+        assert len(msgs) == 1
+        assert msgs[0]["role"] == "user"
+        assert msgs[0]["content"] == "Explain"
+    finally:
+        app.dependency_overrides.pop(deps.get_gemini_client, None)
+
+
+def test_chat_validates_message_length(client, db):
+    from app.models import Scan
+
+    scan = Scan(
+        sha256="f" * 64,
+        filename="test.js",
+        size_bytes=50,
+        status="complete",
+        verdict="clean",
+    )
+    db.add(scan)
+    db.commit()
+
+    # Empty message
+    r = client.post(f"/api/chat/{scan.id}", json={"message": ""})
+    assert r.status_code == 422
+
+    # Too long (> 2000 chars)
+    r = client.post(f"/api/chat/{scan.id}", json={"message": "x" * 2001})
+    assert r.status_code == 422
