@@ -14,4 +14,8 @@ def get_virustotal_client() -> VirusTotalClient:
 @lru_cache
 def get_gemini_client() -> GeminiClient:
     s = get_settings()
-    return GeminiClient(api_key=s.gemini_api_key, model=s.gemini_model)
+    return GeminiClient(
+        api_key=s.gemini_api_key,
+        model=s.gemini_model,
+        fallback_model=s.gemini_fallback_model,
+    )
