@@ -41,3 +41,29 @@ class ScanList(BaseModel):
 
 class ExplanationResponse(BaseModel):
     explanation: str = Field(..., min_length=1)
+
+
+MessageRole = Literal["user", "assistant"]
+
+
+class MessageDTO(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    scan_id: UUID
+    role: MessageRole
+    content: str
+    created_at: datetime
+
+
+class ChatRequest(BaseModel):
+    message: str = Field(..., min_length=1, max_length=2000)
+
+
+class ChatResponse(BaseModel):
+    user_message: MessageDTO
+    assistant_message: MessageDTO
+
+
+class ChatHistory(BaseModel):
+    messages: list[MessageDTO]

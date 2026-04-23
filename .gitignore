@@ -20,6 +20,13 @@ node_modules/
 dist/
 .vite/
 *.log
+*.tsbuildinfo
+
+# pyenv
+.python-version
+
+# Local-only docs (design specs, plans, structure notes)
+docs/superpowers/
 
 # IDE
 .vscode/
