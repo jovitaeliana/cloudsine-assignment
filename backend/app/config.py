@@ -23,7 +23,8 @@ class Settings(BaseSettings):
     max_upload_bytes: int = 32 * 1024 * 1024
     scan_poll_timeout_seconds: int = 180
     vt_base_url: str = "https://www.virustotal.com/api/v3"
-    gemini_model: str = "gemini-2.5-flash"
+    gemini_model: str = "gemini-3.1-flash-lite-preview"
+    gemini_fallback_model: str = "gemini-3-flash-preview"
 
     @property
     def cors_allowed_origins(self) -> list[str]:
