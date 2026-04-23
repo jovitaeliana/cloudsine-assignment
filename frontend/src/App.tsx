@@ -11,7 +11,10 @@ import { useScanPoll } from "./hooks/useScanPoll";
 
 export default function App() {
   const [activeScanId, setActiveScanId] = useState<string | null>(null);
-  const [uploading, setUploading] = useState(false);
+  const [uploadingFile, setUploadingFile] = useState<{ name: string; size: number } | null>(
+    null,
+  );
+  const uploading = uploadingFile !== null;
   const [uploadError, setUploadError] = useState<string | null>(null);
   const { scan, error: pollError } = useScanPoll(activeScanId);
   const { scans, refresh } = useRecentScans();
@@ -23,7 +26,7 @@ export default function App() {
   }, [scan, refresh]);
 
   async function handleFile(file: File) {
-    setUploading(true);
+    setUploadingFile({ name: file.name, size: file.size });
     setUploadError(null);
     try {
       const res = await uploadFile(file);
@@ -32,7 +35,7 @@ export default function App() {
     } catch (e) {
       setUploadError(e instanceof Error ? e.message : "Upload failed");
     } finally {
-      setUploading(false);
+      setUploadingFile(null);
     }
   }
 
@@ -49,7 +52,12 @@ export default function App() {
 
       <main className="max-w-6xl mx-auto px-4 py-6 grid grid-cols-1 md:grid-cols-[1fr_280px] gap-6">
         <section>
-          <UploadZone onFileSelected={handleFile} disabled={uploading} />
+          <UploadZone
+            onFileSelected={handleFile}
+            disabled={uploading}
+            uploadingFilename={uploadingFile?.name ?? null}
+            uploadingSize={uploadingFile?.size ?? null}
+          />
           {uploadError && <p className="mt-3 text-red-700">{uploadError}</p>}
 
           {scan && (

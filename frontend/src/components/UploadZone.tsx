@@ -5,9 +5,22 @@ const MAX_BYTES = 32 * 1024 * 1024;
 interface Props {
   onFileSelected: (file: File) => void;
   disabled?: boolean;
+  uploadingFilename?: string | null;
+  uploadingSize?: number | null;
 }
 
-export function UploadZone({ onFileSelected, disabled }: Props) {
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+export function UploadZone({
+  onFileSelected,
+  disabled,
+  uploadingFilename,
+  uploadingSize,
+}: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -19,17 +32,35 @@ export function UploadZone({ onFileSelected, disabled }: Props) {
       return;
     }
     if (file.size > MAX_BYTES) {
-      setError("File is larger than 32 MB");
+      setError(`File is ${formatSize(file.size)} — max is 32 MB`);
       return;
     }
     setError(null);
     onFileSelected(file);
   }
 
+  if (disabled && uploadingFilename) {
+    return (
+      <div className="border-2 border-dashed border-blue-300 bg-blue-50 rounded-lg p-8 text-center">
+        <div className="flex items-center justify-center gap-3">
+          <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+          <div className="text-left">
+            <p className="text-blue-900 font-medium">Uploading {uploadingFilename}</p>
+            {uploadingSize != null && (
+              <p className="text-xs text-blue-700">{formatSize(uploadingSize)}</p>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
-      className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
-        dragging ? "border-blue-500 bg-blue-50" : "border-gray-300"
+      className={`border-2 border-dashed rounded-lg p-8 text-center transition-all duration-150 ${
+        dragging
+          ? "border-blue-500 bg-blue-50 ring-4 ring-blue-200 scale-[1.01]"
+          : "border-gray-300 hover:border-gray-400"
       } ${disabled ? "opacity-50 pointer-events-none" : ""}`}
       onDragOver={(e) => {
         e.preventDefault();
